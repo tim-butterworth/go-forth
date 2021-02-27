@@ -1,14 +1,14 @@
 package io
 
 import (
-	"fmt"
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 	"tim/forth/core"
 )
 
-func Hi(commandHandler core.ForthCommandHandler) {
+func CommandLineSource(commandHandler core.ForthCommandHandler) {
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("Simple Shell")
 	fmt.Println("----------------")

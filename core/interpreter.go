@@ -57,7 +57,7 @@ func executeCommand(i *ForthInterpreter, s string) {
 	processCommand(i, executionStack)
 }
 
-func saveNewWord(i *ForthInterpreter, _ string) {
+func saveNewWord(i *ForthInterpreter) {
 	accumulator := i.newWordAccumulator
 	newWordLabel := accumulator.label.value()
 
@@ -75,23 +75,28 @@ func saveNewWord(i *ForthInterpreter, _ string) {
 
 	fmt.Printf("Saving the new word! %s\n", newWordLabel)
 	i.words[newWordLabel] = body
+}
+
+func endRecording(i *ForthInterpreter, _ string) {
+	saveNewWord(i)
 
 	i.handler = executeCommand
 	i.newWordAccumulator = NewWordAccumulator()
 }
 
-func recordNewWord(i *ForthInterpreter, s string) {
+func record(i *ForthInterpreter, s string) {
+	i.newWordAccumulator.insert(s)
+}
+func startRecording(i *ForthInterpreter, _ string) {
 	fmt.Println("Recording!!!")
-	if s != ":" {
-		i.newWordAccumulator.insert(s)
-	}
+	i.handler = record
 }
 
 func (i *ForthInterpreter) Execute(s string) {
 	if s == ":" {
-		i.handler = recordNewWord
+		i.handler = startRecording
 	} else if s == ";" {
-		i.handler = saveNewWord
+		i.handler = endRecording
 	}
 
 	i.handler(i, s)

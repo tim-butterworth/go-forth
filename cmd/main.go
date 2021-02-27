@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"strings"
-	io "tim/forth/io/commandline"
 	"tim/forth/core"
+	io "tim/forth/io/commandline"
 )
 
 type handler struct {
 	interpreter *core.ForthInterpreter
 }
+
 func (h handler) Execute(command string) string {
 	splits := strings.Split(command, " ")
 	for _, v := range splits {
@@ -22,7 +23,7 @@ func (h handler) Execute(command string) string {
 func main() {
 	fmt.Println("hi")
 
-	io.Hi(&handler{
+	io.CommandLineSource(&handler{
 		interpreter: core.NewForthInterpreter(),
 	})
 }
