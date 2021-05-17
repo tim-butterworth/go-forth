@@ -32,3 +32,13 @@ A user can define cusom words with the following syntax:
 for example cube could be:
 
 `: cube dup dup * * ;`
+
+an example of recursion
+
+`: drop2 drop drop ;`
+`: dec 1 flip - ;`
+`: fibto 0 < IF drop2 dec rotate fib print rotate rotate fibto ELSE drop2 THEN ;`
+
+to use:
+
+`1 1 10` -> will print fibonacci numbers for the specified number of itterations (in this case 10)

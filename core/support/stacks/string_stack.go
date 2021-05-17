@@ -1,5 +1,10 @@
 package stacks
 
+import (
+	"fmt"
+	"tim/forth/core/support/stacks/internal"
+)
+
 type StringNode interface {
 	isEmpty() bool
 	value() string
@@ -11,7 +16,7 @@ func (e emptyStringNode) isEmpty() bool {
 	return true
 }
 func (e emptyStringNode) value() string {
-	return ""
+	return "<-- EMPTY -->"
 }
 func (e emptyStringNode) next() StringNode {
 	return e
@@ -37,10 +42,13 @@ type StringStack interface {
 	Push(string)
 	Pop() string
 	Size() int
+	ToString() string
 }
 type Stack struct {
-	root  StringNode
-	count int
+	root         StringNode
+	count        int
+	backingStack internal.BackingStack
+	dataMap      map[int64]string
 }
 
 func (stack *Stack) IsEmpty() bool {
@@ -64,10 +72,30 @@ func (stack *Stack) Pop() string {
 func (stack *Stack) Size() int {
 	return stack.count
 }
+func (stack *Stack) ToString() string {
+	node := stack.root
+
+	result := ""
+	for {
+		if node.isEmpty() {
+			break
+		}
+
+		result = result + fmt.Sprintf("[%s]", node.value())
+		node = node.next()
+	}
+
+	return result
+}
 
 func NewStringStack() StringStack {
+	baseStack := internal.NewBackingStack()
+	dataMap := make(map[int64]string)
+
 	return &Stack{
-		root:  emptyStringNode{},
-		count: 0,
+		root:         emptyStringNode{},
+		count:        0,
+		backingStack: baseStack,
+		dataMap:      dataMap,
 	}
 }

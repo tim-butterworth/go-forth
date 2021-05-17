@@ -3,7 +3,7 @@ package stacks_test
 import (
 	"fmt"
 	"testing"
-	"tim/forth/core/stacks"
+	"tim/forth/core/support/stacks"
 )
 
 func repeat(times int, op func()) {

@@ -3,15 +3,17 @@ package core
 import (
 	"fmt"
 	"strconv"
-	"tim/forth/core/stacks"
+	"tim/forth/core/compiler"
+	"tim/forth/core/support/stacks"
 	"tim/forth/core/words"
+
+	"github.com/google/uuid"
 )
 
 type ForthInterpreter struct {
 	stack              *stacks.ForthStack
 	newWordAccumulator *newWordAccumulator
-	words              map[string][]string
-	nativeWords        map[string]func(*stacks.ForthStack) error
+	words              map[string]func(*stacks.ForthStack, stacks.StringStack) error
 	handler            func(*ForthInterpreter, string)
 }
 
@@ -29,21 +31,17 @@ func processCommand(i *ForthInterpreter, executionStack stacks.StringStack) {
 			continue
 		}
 
-		maybeWord := i.words[command]
-		if maybeWord != nil {
-			for _, w := range maybeWord {
-				fmt.Println(w)
-				executionStack.Push(w)
+		fun, found := i.words[command]
+		if !found {
+			fmt.Printf("Word -> [%s] is not defined (the stack should probably be dumped in this case)\n", command)
+			fmt.Println("Available commands are:")
+			for key := range i.words {
+				fmt.Println(key)
 			}
-			continue
+			break
 		}
 
-		maybeFun := i.nativeWords[command]
-		if maybeFun == nil {
-			break //should return an error here
-		}
-
-		err = maybeFun(i.stack)
+		err = fun(i.stack, executionStack)
 		if err != nil {
 			fmt.Println("Error: ", err)
 		}
@@ -57,28 +55,48 @@ func executeCommand(i *ForthInterpreter, s string) {
 	processCommand(i, executionStack)
 }
 
-func saveNewWord(i *ForthInterpreter) {
-	accumulator := i.newWordAccumulator
-	newWordLabel := accumulator.label.value()
+type wordEntry struct {
+	key  string
+	body []string
+}
 
-	body := make([]string, accumulator.body.Size())
-	recordedBody := accumulator.body
-	index := 0
-	for {
-		if recordedBody.IsEmpty() {
-			break
-		}
+func (entry *wordEntry) getKey() string {
+	return entry.key
+}
+func (entry *wordEntry) getBody() []string {
+	return entry.body
+}
 
-		body[index] = recordedBody.Pop()
-		index = index + 1
+type uuidProvider struct{}
+
+func (idProvider *uuidProvider) NextId() string {
+	id, err := uuid.NewUUID()
+	if err != nil {
+		return ""
 	}
 
-	fmt.Printf("Saving the new word! %s\n", newWordLabel)
-	i.words[newWordLabel] = body
+	return id.String()
 }
 
 func endRecording(i *ForthInterpreter, _ string) {
-	saveNewWord(i)
+	compiler := compiler.NewCompiler(&uuidProvider{})
+
+	accumulator := i.newWordAccumulator
+	i.newWordAccumulator.label.value()
+	compiler.PushWord(accumulator.label.value())
+
+	for _, w := range accumulator.body[0:accumulator.wordCount] {
+		compiler.PushWord(w)
+	}
+
+	words, err := compiler.Complete()
+	if err != nil {
+		fmt.Println("Failed to process some stuff :(")
+	} else {
+		for label, body := range words {
+			i.words[label] = body
+		}
+	}
 
 	i.handler = executeCommand
 	i.newWordAccumulator = NewWordAccumulator()
@@ -132,30 +150,61 @@ func NewPopulatedLabel(s string) Label {
 }
 
 type newWordAccumulator struct {
-	label Label
-	body  stacks.StringStack
+	label     Label
+	body      []string
+	wordCount int32
 }
 
 func (a *newWordAccumulator) insert(s string) {
 	if a.label.isEmpty() {
 		a.label = NewPopulatedLabel(s)
 	} else {
-		a.body.Push(s)
+		a.body[a.wordCount] = s
+		a.wordCount = a.wordCount + 1
 	}
 }
 
 func NewWordAccumulator() *newWordAccumulator {
 	return &newWordAccumulator{
-		label: EmptyLabel{},
-		body:  stacks.NewStringStack(),
+		label:     EmptyLabel{},
+		body:      make([]string, 100),
+		wordCount: 0,
+	}
+}
+
+func wrapNative(name string, fun func(*stacks.ForthStack) error) func(*stacks.ForthStack, stacks.StringStack) error {
+	return func(forthStack *stacks.ForthStack, executionStack stacks.StringStack) error {
+		fmt.Printf("Calling through to native function, [%s]\n", name)
+		return fun(forthStack)
+	}
+}
+
+func wrapPredefined(name string, body []string) func(*stacks.ForthStack, stacks.StringStack) error {
+	return func(forthStack *stacks.ForthStack, executionStack stacks.StringStack) error {
+		for _, w := range body {
+			fmt.Println(w)
+			executionStack.Push(w)
+		}
+		return nil
 	}
 }
 
 func NewForthInterpreter() *ForthInterpreter {
+	nativeWords := words.NativeWords()
+	predefinedWords := words.PredefinedWords()
+
+	words := make(map[string]func(*stacks.ForthStack, stacks.StringStack) error)
+	for key, value := range nativeWords {
+		words[key] = wrapNative(key, value)
+	}
+
+	for key, body := range predefinedWords {
+		words[key] = wrapPredefined(key, body)
+	}
+
 	return &ForthInterpreter{
 		stack:              stacks.NewStack(),
-		nativeWords:        words.NativeWords(),
-		words:              words.PredefinedWords(),
+		words:              words,
 		newWordAccumulator: NewWordAccumulator(),
 		handler:            executeCommand,
 	}
