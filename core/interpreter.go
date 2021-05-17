@@ -3,15 +3,14 @@ package core
 import (
 	"fmt"
 	"strconv"
-	"tim/forth/core/stacks"
+	"tim/forth/core/support/stacks"
 	"tim/forth/core/words"
 )
 
 type ForthInterpreter struct {
 	stack              *stacks.ForthStack
 	newWordAccumulator *newWordAccumulator
-	words              map[string][]string
-	nativeWords        map[string]func(*stacks.ForthStack) error
+	words              map[string]func(*stacks.ForthStack, stacks.StringStack) error
 	handler            func(*ForthInterpreter, string)
 }
 
@@ -29,21 +28,17 @@ func processCommand(i *ForthInterpreter, executionStack stacks.StringStack) {
 			continue
 		}
 
-		maybeWord := i.words[command]
-		if maybeWord != nil {
-			for _, w := range maybeWord {
-				fmt.Println(w)
-				executionStack.Push(w)
+		fun, found := i.words[command]
+		if !found {
+			fmt.Printf("Word -> [%s] is not defined (the stack should probably be dumped in this case)\n", command)
+			fmt.Println("Available commands are:")
+			for key := range i.words {
+				fmt.Println(key)
 			}
-			continue
+			break
 		}
 
-		maybeFun := i.nativeWords[command]
-		if maybeFun == nil {
-			break //should return an error here
-		}
-
-		err = maybeFun(i.stack)
+		err = fun(i.stack, executionStack)
 		if err != nil {
 			fmt.Println("Error: ", err)
 		}
@@ -57,12 +52,25 @@ func executeCommand(i *ForthInterpreter, s string) {
 	processCommand(i, executionStack)
 }
 
-func saveNewWord(i *ForthInterpreter) {
-	accumulator := i.newWordAccumulator
-	newWordLabel := accumulator.label.value()
+type wordEntry struct {
+	key  string
+	body []string
+}
 
-	body := make([]string, accumulator.body.Size())
-	recordedBody := accumulator.body
+func (entry *wordEntry) getKey() string {
+	return entry.key
+}
+func (entry *wordEntry) getBody() []string {
+	return entry.body
+}
+
+type Compiler interface {
+}
+
+func compile(accume *newWordAccumulator) (error, wordEntry) {
+	body := make([]string, accume.body.Size())
+	newWordLabel := accume.label.value()
+	recordedBody := accume.body
 	index := 0
 	for {
 		if recordedBody.IsEmpty() {
@@ -74,11 +82,26 @@ func saveNewWord(i *ForthInterpreter) {
 	}
 
 	fmt.Printf("Saving the new word! %s\n", newWordLabel)
-	i.words[newWordLabel] = body
+	return nil, wordEntry{
+		key:  newWordLabel,
+		body: body,
+	}
+}
+
+func compileNewWord(newWordAccumulator *newWordAccumulator, wordEntryHandler func(wordEntry wordEntry)) {
+	err, newWord := compile(newWordAccumulator)
+	if err != nil {
+		fmt.Println("Error compiling", err)
+		return
+	}
+
+	wordEntryHandler(newWord)
 }
 
 func endRecording(i *ForthInterpreter, _ string) {
-	saveNewWord(i)
+	compileNewWord(i.newWordAccumulator, func(wordEntry wordEntry) {
+		i.words[wordEntry.getKey()] = wrapPredefined(wordEntry.getKey(), wordEntry.getBody())
+	})
 
 	i.handler = executeCommand
 	i.newWordAccumulator = NewWordAccumulator()
@@ -151,11 +174,39 @@ func NewWordAccumulator() *newWordAccumulator {
 	}
 }
 
+func wrapNative(name string, fun func(*stacks.ForthStack) error) func(*stacks.ForthStack, stacks.StringStack) error {
+	return func(forthStack *stacks.ForthStack, executionStack stacks.StringStack) error {
+		fmt.Printf("Calling through to native function, [%s]\n", name)
+		return fun(forthStack)
+	}
+}
+
+func wrapPredefined(name string, body []string) func(*stacks.ForthStack, stacks.StringStack) error {
+	return func(forthStack *stacks.ForthStack, executionStack stacks.StringStack) error {
+		for _, w := range body {
+			fmt.Println(w)
+			executionStack.Push(w)
+		}
+		return nil
+	}
+}
+
 func NewForthInterpreter() *ForthInterpreter {
+	nativeWords := words.NativeWords()
+	predefinedWords := words.PredefinedWords()
+
+	words := make(map[string]func(*stacks.ForthStack, stacks.StringStack) error)
+	for key, value := range nativeWords {
+		words[key] = wrapNative(key, value)
+	}
+
+	for key, body := range predefinedWords {
+		words[key] = wrapPredefined(key, body)
+	}
+
 	return &ForthInterpreter{
 		stack:              stacks.NewStack(),
-		nativeWords:        words.NativeWords(),
-		words:              words.PredefinedWords(),
+		words:              words,
 		newWordAccumulator: NewWordAccumulator(),
 		handler:            executeCommand,
 	}

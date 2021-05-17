@@ -2,7 +2,7 @@ package words
 
 import (
 	"fmt"
-	"tim/forth/core/stacks"
+	"tim/forth/core/support/stacks"
 )
 
 type UnderflowError struct{}
@@ -38,6 +38,43 @@ func binaryOperation(op func(int64, int64) (int64, error)) func(*stacks.ForthSta
 	}
 }
 
+func toStackBoolean(b bool) int64 {
+	boolT := int64(0)
+	boolF := int64(1)
+
+	if b {
+		return boolT
+	}
+
+	return boolF
+}
+
+func comparisonOperation(op func(int64, int64) bool) func(*stacks.ForthStack) error {
+	return func(stack *stacks.ForthStack) error {
+		if stack.IsEmpty() {
+			return NewUnderflowError()
+		}
+
+		item1 := stack.Pop()
+
+		if stack.IsEmpty() {
+			return NewUnderflowError()
+		}
+
+		item2 := stack.Pop()
+
+		result := op(item1.ValueOf(), item2.ValueOf())
+
+		stackBoolean := toStackBoolean(result)
+
+		stack.Push(item2)
+		stack.Push(item1)
+		stack.Push(stacks.Number{Value: stackBoolean})
+
+		return nil
+	}
+}
+
 func withItems(stack *stacks.ForthStack, n int, ifItems func([]stacks.ForthItem) error) error {
 	items := make([]stacks.ForthItem, n)
 	success := false
@@ -64,6 +101,7 @@ func withItems(stack *stacks.ForthStack, n int, ifItems func([]stacks.ForthItem)
 }
 
 func NativeWords() map[string]func(*stacks.ForthStack) error {
+
 	predefined := make(map[string]func(*stacks.ForthStack) error)
 	predefined["dup"] = func(stack *stacks.ForthStack) error {
 		if stack.IsEmpty() {
@@ -126,6 +164,25 @@ func NativeWords() map[string]func(*stacks.ForthStack) error {
 	})
 	predefined["-"] = binaryOperation(func(a int64, b int64) (int64, error) {
 		return a - b, nil
+	})
+
+	predefined[">"] = comparisonOperation(func(a int64, b int64) bool {
+		return (a > b)
+	})
+	predefined[">="] = comparisonOperation(func(a int64, b int64) bool {
+		return (a >= b)
+	})
+	predefined["<"] = comparisonOperation(func(a int64, b int64) bool {
+		return (a < b)
+	})
+	predefined["<="] = comparisonOperation(func(a int64, b int64) bool {
+		return (a <= b)
+	})
+	predefined["=="] = comparisonOperation(func(a int64, b int64) bool {
+		return (a == b)
+	})
+	predefined["!="] = comparisonOperation(func(a int64, b int64) bool {
+		return (a != b)
 	})
 
 	return predefined
